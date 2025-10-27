@@ -60,8 +60,6 @@ namespace UG.Framework
             ViewBehaviour = null;
         }
 
-        //로드하면 무조건 하나만 만들어야 함.
-        //그러기 위해 따로 로드할 기회를 주지않음. 무조건 내부에 추가생성은 Child
         bool IUIController.Create(int InDepth, System.Action<IUIController> InDestroyer)
         {
             Depth = InDepth;
@@ -125,4 +123,5 @@ namespace UG.Framework
         }
     }
 }
+
 

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -13,9 +13,7 @@ namespace UG.Framework
         internal void DestroyGameObject();
         internal UUIViewBehaviour GetViewBehaviour();
         public int GetDepth();
-
         public void ChangingScene();
-
         public bool IsVisibleCheck();
     }
 
@@ -37,9 +35,35 @@ namespace UG.Framework
         protected abstract void Initialize(UUIViewBehaviour InView);
         protected abstract void UnInitialize();
         protected abstract UAssetID GetBehaviourAssetID();
+
         public virtual void OnUIMessage(Message InParameter) //Message가 없을수도 있음 
         {
 
+        }
+
+        public virtual bool IsVisibleCheck()
+        {
+            return true;
+        }
+
+        public int GetDepth()
+        {
+            return Depth;
+        }
+
+        public void DestroyUI()
+        {
+            Destroyer(this);
+        }
+
+        public void ChangingScene()
+        {
+            Destroyer(this);
+        }
+
+        protected Behaviour View()
+        {
+            return ViewBehaviour;
         }
 
         void IUIController.SetHandler(UUIHandler InHandler)
@@ -97,31 +121,5 @@ namespace UG.Framework
         {
             return ViewBehaviour;
         }
-
-        public int GetDepth()
-        {
-            return Depth;
-        }
-
-        public void DestroyUI()
-        {
-            Destroyer(this);
-        }
-        protected Behaviour View()
-        {
-            return ViewBehaviour;
-        }
-
-        public void ChangingScene()
-        {
-            Destroyer(this);
-        }
-
-        public virtual bool IsVisibleCheck()
-        {
-            return true;
-        }
     }
 }
-
-

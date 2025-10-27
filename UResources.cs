@@ -1,4 +1,4 @@
-﻿
+
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -20,27 +20,26 @@ namespace UG.Framework
         private UAssetCopyObjectDestroyer CopyObjectDestroyer;
 
         private Dictionary<UAssetID, UAssetPool> AssetPools = new Dictionary<UAssetID, UAssetPool>();
-
-        
-        
         private bool BundleSystem = false;
+
         public override void Initialize()
         {
             ResourceDestroyer = new UAssetDestroyer(this);
             BundleDestroyer = new UBundleDestroyer(this);
             CopyObjectDestroyer = new UAssetCopyObjectDestroyer(this);
         }
+
         public override void UnInitialize()
         {
             Clear();
         }
+
         public override void ChangingScene()
         {
         }
 
         public override void ChangedScene()
         {
-
         }
 
         public void Clear()
@@ -117,8 +116,6 @@ namespace UG.Framework
 
         }
 
-
-        //패치 타이밍 때문에 나눌수밖에 없을듯
         public void LoadBundleDatas()
         {
             BundleManifest = LoadManifest();
@@ -126,63 +123,7 @@ namespace UG.Framework
 
             BundleSystem = null != BundleManifest && null != BundleDatabase;
         }
-        private UBundle FindBundle(UBundleID BundleID)
-        {
-            if (UBundleID.CheckValid(BundleID) == false)
-            {
-                return null;
-            }
 
-            if (Bundles.ContainsKey(BundleID) == true)
-            {
-                return Bundles[BundleID];
-            }
-            else
-            {
-                return null;
-            }
-        }
-
-        private UBundle AddBundle(UBundleID BundleID)
-        {
-            if (UBundleID.CheckValid(BundleID) == false)
-            {
-                return null;
-            }
-
-            //if (InReleaseType == EReleaseType.Immidiately)
-            //{
-            //    HasImmidiatelyDestroyBundle = true;
-            //}
-
-            UBundle Bundle = FindBundle(BundleID);
-            if (Bundle == null)
-            {
-                AssetBundle LoadedBundle = LoadAssetBundle(BundleID.GetBundleName());
-                if(null == LoadedBundle)
-                {
-                    return null;
-                }
-
-#if UG_BUNDLE_LOG
-                ULogger.Log($"AssetBundleLoad: {BundleID.GetBundleName()}");
-#endif
-
-                Bundle = new UBundle(BundleID, LoadedBundle, BundleDestroyer);
-                 
-                Bundles.Add(BundleID, Bundle);
-
-                LoadDependencies(Bundle);
-            }
-            else
-            {
-                ULogger.Error("Already added bundle : " + BundleID.ToString());
-
-                //Bundle.CheckBundleInfo(InReleaseType);
-            }
-
-            return Bundle;
-        }
         public void UnloadBundle(UBundleID BundleID)
         {
             if (UBundleID.CheckValid(BundleID) == false)
@@ -206,17 +147,6 @@ namespace UG.Framework
 
                 Bundles.Remove(BundleID);
             }
-        }
-
-        private UBundle FindOrLoadBundle(UBundleID BundleID)
-        {
-            UBundle Bundle = FindBundle(BundleID);
-            if (Bundle == null)
-            {
-                Bundle = AddBundle(BundleID);
-            }
-
-            return Bundle;
         }
 
         public bool LoadBundleByBundleName(string InBundleName)
@@ -273,8 +203,6 @@ namespace UG.Framework
             UAssetObject AssetObject = LoadAsset(InAssetID);
             if (null != AssetObject)
             {
-                //기본 리소스이기 때문에 이걸갖고 놀라면 이 레퍼런스를 기억해야한다. 
-                //지워질때 레퍼카운터를 차감시킴
                 UAssetRefObject RefObject = new UAssetRefObject(AssetObject);
 
                 return RefObject;
@@ -387,6 +315,175 @@ namespace UG.Framework
 
             UAssetPool AssetPool = this.GetAssetPool(InAssetID, AssetObject);
             AssetPool.AddSize(InCount);
+        }
+
+        public void UnUsed_ReleaseAssetPool(string InKeyString, List<UAssetID> InIDList)
+        {
+            List<UAssetID> DeleteKeyList = new List<UAssetID>();
+            foreach (var Data in AssetPools)
+            {
+                bool bUse = false;
+                int Index = Data.Key.GetName().IndexOf(InKeyString);
+
+                if (Index == 0)
+                {
+                    foreach (var ID in InIDList)
+                    {
+                        //있으면, 살려둠
+                        if (ID == Data.Key)
+                        {
+                            bUse = true;
+                            break;
+                        }
+                    }
+
+                    if (!bUse)
+                    {
+                        DeleteKeyList.Add(Data.Key);
+                    }
+                }
+            }
+
+            foreach (var Data in DeleteKeyList)
+            {
+                ULogger.Warning($"Delete Key {Data.GetName()}");
+
+                if (AssetPools.TryGetValue(Data, out UAssetPool CurrentAsset))
+                {
+                    CurrentAsset.Release();
+                }
+
+                AssetPools.Remove(Data);
+            }
+        }
+
+        public static void DestroyObject(UBaseBehaviour InBehaviour)
+        {
+            GameObject.DestroyImmediate(InBehaviour.GetGameObject());
+        }
+
+
+        internal void CallDestroyer_UnLoadAssetInstantiate(UAssetCopyObject InCopyObject)
+        {
+            UAssetObject OriginObject = InCopyObject.GetOriginObject();
+            {
+                UAssetPool AssetPool;
+
+                UManagedBehaviour CopyedBehaviour = InCopyObject.GetCopyObject();
+
+                if (AssetPools.TryGetValue(InCopyObject.GetAssetID(), out AssetPool))
+                {
+                    CopyedBehaviour.UnInitialize();
+
+                    AssetPool.Free(CopyedBehaviour);
+                }
+                else
+                {
+                    CopyedBehaviour.UnInitialize();
+
+                    UResources.DestroyObject(CopyedBehaviour);
+                }
+            }
+            OriginObject.DecreaseRef();
+        }
+
+        internal void CallDestroyer_UnLoadAsset(UAssetObject InAssetObject)
+        {
+            if (InAssetObject.IsZeroRef())
+            {
+                AssetObjects.Remove(InAssetObject.GetAssetID());
+                if (!InAssetObject.IsBuiltInResource())
+                {
+                    UBundle Bundle = FindBundle(InAssetObject.GetBundleID());
+
+                    if (Bundle != null)
+                    {
+                        Bundle.DecreaseRef();
+                    }
+                }
+                else
+                {
+                    Resources.UnloadUnusedAssets();
+                }
+            }
+        }
+
+        internal void CallDestroyer_UnLoadBundle(UBundle InBundle)
+        {
+            if (InBundle.IsZeroRef())
+            {
+                UnloadBundle(InBundle.GetBundleID());
+            }
+        }
+
+#if UNITY_EDITOR
+        internal Dictionary<UBundleID, UBundle> GetBundlesForEditor()
+        {
+            return Bundles;
+        }
+
+        internal Dictionary<UAssetID, UAssetObject> GetAssetObjectsForEditor()
+        {
+            return AssetObjects;
+        }
+
+        internal Dictionary<UAssetID, UAssetPool> GetAssetPoolForEditor()
+        {
+            return AssetPools;
+        }
+#endif
+
+        private UBundle FindBundle(UBundleID BundleID)
+        {
+            if (UBundleID.CheckValid(BundleID) == false)
+            {
+                return null;
+            }
+
+            if (Bundles.ContainsKey(BundleID) == true)
+            {
+                return Bundles[BundleID];
+            }
+            else
+            {
+                return null;
+            }
+        }
+
+        private UBundle AddBundle(UBundleID BundleID)
+        {
+            if (UBundleID.CheckValid(BundleID) == false)
+            {
+                return null;
+            }
+
+            UBundle Bundle = FindBundle(BundleID);
+            if (Bundle == null)
+            {
+                AssetBundle LoadedBundle = LoadAssetBundle(BundleID.GetBundleName());
+                if (null == LoadedBundle)
+                {
+                    return null;
+                }
+
+#if UG_BUNDLE_LOG
+                ULogger.Log($"AssetBundleLoad: {BundleID.GetBundleName()}");
+#endif
+
+                Bundle = new UBundle(BundleID, LoadedBundle, BundleDestroyer);
+
+                Bundles.Add(BundleID, Bundle);
+
+                LoadDependencies(Bundle);
+            }
+            else
+            {
+                ULogger.Error("Already added bundle : " + BundleID.ToString());
+
+                //Bundle.CheckBundleInfo(InReleaseType);
+            }
+
+            return Bundle;
         }
 
         private UAssetObject LoadAsset(UAssetID InAssetID)
@@ -518,6 +615,17 @@ namespace UG.Framework
             return Pool;
         }
 
+        private UBundle FindOrLoadBundle(UBundleID BundleID)
+        {
+            UBundle Bundle = FindBundle(BundleID);
+            if (Bundle == null)
+            {
+                Bundle = AddBundle(BundleID);
+            }
+
+            return Bundle;
+        }
+
         private void LoadDependencies(UBundle InBundle)
         {
             string[] Dependencies = BundleManifest.GetDirectDependencies(InBundle.GetBundleID().GetBundleName());
@@ -562,67 +670,6 @@ namespace UG.Framework
             }
 
             return null;
-        }
-
-        internal void CallDestroyer_UnLoadAssetInstantiate(UAssetCopyObject InCopyObject)
-        {
-            UAssetObject OriginObject = InCopyObject.GetOriginObject();
-            {
-                UAssetPool AssetPool;
-
-                UManagedBehaviour CopyedBehaviour = InCopyObject.GetCopyObject();
-
-                if (AssetPools.TryGetValue(InCopyObject.GetAssetID(), out AssetPool))
-                {
-                    CopyedBehaviour.UnInitialize();
-
-                    AssetPool.Free(CopyedBehaviour);
-                }
-                else
-                {
-                    CopyedBehaviour.UnInitialize();
-
-                    UResources.DestroyObject(CopyedBehaviour);
-                }
-            }
-            OriginObject.DecreaseRef();
-        }
-        
-        internal void CallDestroyer_UnLoadAsset(UAssetObject InAssetObject)
-        {
-            if (InAssetObject.IsZeroRef()) //다음 프레임에서 다시 먼저 할당할 수도 있으니까 체크
-            {
-                AssetObjects.Remove(InAssetObject.GetAssetID());
-                //이게 호출이 되야하는지 체크(번들일때)
-                if (!InAssetObject.IsBuiltInResource())
-                {
-                    //UnloadAsset may only be used on individual assets and can not0 be used on GameObject's / Components / AssetBundles or GameManagers
-                    UBundle Bundle = FindBundle(InAssetObject.GetBundleID());
-           
-                    if (Bundle != null)
-                    {
-                        Bundle.DecreaseRef();
-                    }
-                }
-                else
-                {
-                    //이부분 문제가 있음. prefab이면 안되고 기본 자산이면 가능한부분
-                    //Resources.UnloadAsset(InAssetObject.Asset());
-                    //Object.Destroy(InAssetObject.Asset());
-
-                    //일단 단일로 테스트할땐 문제 없었는데 후에 리소스가 많아지고 많이 언로드를 할때 렉이 걸리던지 한다면 모았다가 하던지 
-                    //다른 방법을 찾아야 한다. 어차피 해제를 안시키면 유니티가 메모리가 모자라지면 불시에 청소하려 할거기 때문에 일단 이대로 진행
-                    //prefab load -> prefab unload -> UnloadUnusedAssets 시 내부 링크된 리소스 즉시 지워짐
-                    Resources.UnloadUnusedAssets();
-                }
-            }
-        }
-        internal void CallDestroyer_UnLoadBundle(UBundle InBundle)
-        {
-            if (InBundle.IsZeroRef())
-            {
-                UnloadBundle(InBundle.GetBundleID());
-            }
         }
 
         private AssetBundleManifest LoadManifest()
@@ -670,70 +717,6 @@ namespace UG.Framework
             return null;
         }
 
-        public static void DestroyObject(UBaseBehaviour InBehaviour)
-        {
-            GameObject.DestroyImmediate(InBehaviour.GetGameObject());
-        }
-
-        public void UnUsed_ReleaseAssetPool(string InKeyString,  List<UAssetID> InIDList)
-        {
-            List<UAssetID> DeleteKeyList = new List<UAssetID>();
-            foreach(var Data in AssetPools)
-            {
-                bool bUse = false;
-                int Index = Data.Key.GetName().IndexOf(InKeyString);
-
-                if (Index == 0)
-                {
-                    foreach(var ID in InIDList)
-                    {
-                        //있으면, 살려둠
-                        if(ID == Data.Key)
-                        {
-                            bUse = true;
-                            break;
-                        }
-                    }
-
-                    if (!bUse)
-                    {
-                        DeleteKeyList.Add(Data.Key);
-                    }
-                }
-            }
-
-            foreach(var Data in DeleteKeyList)
-            {
-                ULogger.Warning($"Delete Key {Data.GetName()}");
-
-                if(AssetPools.TryGetValue(Data, out UAssetPool CurrentAsset))
-                {
-                    CurrentAsset.Release();
-                }
-
-                AssetPools.Remove(Data);
-            }
-        }
-
-#if UNITY_EDITOR
-        internal Dictionary<UBundleID, UBundle> GetBundlesForEditor()
-        {
-            return Bundles;
-        }
-
-        internal Dictionary<UAssetID, UAssetObject> GetAssetObjectsForEditor()
-        {
-            return AssetObjects;
-        }
-
-        internal Dictionary<UAssetID, UAssetPool> GetAssetPoolForEditor()
-        {
-            return AssetPools;
-        }
-#endif
-
-        //고민좀 해봐야함
-        //이하 assetpool
         private T PoolAlloc<T>(UAssetID InAssetID) where T : UManagedBehaviour
         {
             UAssetObject AssetObject = LoadAsset(InAssetID);
@@ -754,12 +737,6 @@ namespace UG.Framework
 
                 return null;
             }
-
-            //if (null != Template)
-            //{
-            //    Template.Initialize();
-            //    Template.SetAssetReference(new UAssetCopyObject(AssetObject, Template, CopyObjectDestroyer));
-            //}
 
             return Template;
         }
@@ -792,7 +769,6 @@ namespace UG.Framework
 
             public IPoolObject Alloc()
             {
-                //UBaseBehaviour Value = Resources.AssetInstantiate<UBaseBehaviour>(AssetID);
                 UManagedBehaviour Value = Resources.PoolAlloc<UManagedBehaviour>(AssetID);
 
                 if (null == Value)
@@ -818,7 +794,5 @@ namespace UG.Framework
                 }
             }
         }
-
-      
     }
 }

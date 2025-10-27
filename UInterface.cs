@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using System.Linq;
@@ -12,7 +12,11 @@ namespace UG.Framework
         private GameObject UIRoot = null;
 
         private Dictionary<UUIHandler, IUIController> Controllers = new Dictionary<UUIHandler, IUIController>();
-        
+
+        private bool BlockChecker = false;
+        private float BlockDeltaTime = 0f;
+        private readonly float BlockTimeMax = 10f;
+
         public override void Initialize()
         {
             UIRoot = new GameObject("UIRoot");
@@ -50,10 +54,6 @@ namespace UG.Framework
         {
         }
 
-
-        private bool BlockChecker = false;
-        private float BlockDeltaTime = 0f;
-        private readonly float BlockTimeMax = 10f;
         public void EventBlock(bool IsBlock)
         {
             if (IsBlock)
@@ -65,18 +65,6 @@ namespace UG.Framework
             foreach(var Data in UILayers)
             {
                 Data.Value.SetBlock(IsBlock);
-            }
-        }
-
-        private void ClearPoolObject()
-        {
-            var UIList = Controllers.Keys.ToArray();
-            if(null != UIList)
-            {
-                for(int i = UIList.Length -1; i >= 0; i--)
-                {
-                    Controllers[UIList[i]].ChangingScene();
-                }
             }
         }
 
@@ -257,6 +245,18 @@ namespace UG.Framework
             }
 
             return false;
+        }
+
+        private void ClearPoolObject()
+        {
+            var UIList = Controllers.Keys.ToArray();
+            if (null != UIList)
+            {
+                for (int i = UIList.Length - 1; i >= 0; i--)
+                {
+                    Controllers[UIList[i]].ChangingScene();
+                }
+            }
         }
 
         private void DestroyController(IUIController InController)
